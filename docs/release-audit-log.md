@@ -5,11 +5,11 @@
 ## Назначение
 
 Adversarial audit — субагент или внешний пилот ищет регрессии вне покрытия:
-- 8 detectors (`integration-detectors.sh`)
-- smoke 14 (`integration-smoke.sh`)
+- 11 detectors (`integration-contract-validator.sh`)
+- smoke 49 (`smoke-test-fresh-install.sh`)
 - promote-checks (`validate-fmt-scripts.sh`)
 
-Любой найденный класс регрессий → новый detector в `integration-detectors.sh` (если воспроизводимо в CI) или smoke (если требует среды пилота).
+Любой найденный класс регрессий → новый detector в `integration-contract-validator.sh` (если воспроизводимо в CI) или smoke (если требует среды пилота).
 
 ## Process
 
@@ -30,6 +30,7 @@ release tag vX.Y.Z → auto-issue (legacy) | новая практика → з�
 
 | Version | Status | Date | Findings | Result | Notes |
 |---------|--------|------|----------|--------|-------|
+| v0.40.0 | **completed** | 2026-09-10 | 0 blocker / 0 important, 4 nice-to-have | STABLE | issue #748 (red-team Kai9000, fork allexxus/FMT-exocortex-template); F1 fixed → commit 88619f5 (DETECTOR_07B_REGEX); F2 stale refs (pre-existing); F3 doc drift (имена/счётчики detector+smoke); F4 7/24 substituted без {{}} |
 | v0.39.1 | **completed** | 2026-08-30 | 0 P0/P1, 3 low-severity (pre-existing, not caused by this delta) | GO | issue #576 (self-run by implementing agent, pilot-waived); independent context-isolated re-audit of the delta (PR #585 f896701 + PR #586 10c9732, personal-guide rename) — separate GO, findings: stale `docs/skills-catalog.md` (pre-existing), `org-dev/SKILL.md` references unrelated `PACK-personal/personal-guide/` path (needs owner confirmation it's intentionally distinct), `seed/strategy/scripts/day-open-scaffold.sh` not covered by manifest B2 (pre-existing gap) |
 | v0.34.1 | skipped-unverified | — | — | — | migrated from #133 |
 | v0.34.0 | skipped-unverified | — | — | — | migrated from #130 |
@@ -54,6 +55,6 @@ release tag vX.Y.Z → auto-issue (legacy) | новая практика → з�
 ## Связанные
 
 - `verify-before-promote.sh` — gate для record-keeping
-- `integration-detectors.sh` — куда возвращаются находки audit'а
+- `integration-contract-validator.sh` — куда возвращаются находки audit'а
 - `TESTING.md` — общая стратегия
 - Peer-session 2026-06-01-18 (авторский governance-репо) — миграция из 22 open issues
