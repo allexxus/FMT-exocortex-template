@@ -18,4 +18,9 @@
 # (subagent post-release verify нашёл gap, Євгений нашёл бы на fresh clone).
 export DETECTOR_07_REGEX='`DS-strategy[`/]|/DS-strategy/| DS-strategy[ /]'
 
+# Detector #7 (вариант для .py/.sh): single-quote/bare/path формы DS-strategy.
+# История: v0.40.0 post-release audit (#748) нашёл gap — inline-регекс ловил только
+# "DS-strategy" и /DS-strategy/, пропускал 'DS-strategy' и bare `cd DS-strategy`.
+export DETECTOR_07B_REGEX='["'\'']DS-strategy["'\'']|/DS-strategy[/"'\'']|[[:space:]]DS-strategy([[:space:]]|/|$)|^DS-strategy([[:space:]]|/|$)'
+
 # (При добавлении detector_08+ — добавлять здесь как DETECTOR_NN_REGEX)

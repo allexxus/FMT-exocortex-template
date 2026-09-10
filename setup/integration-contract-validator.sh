@@ -231,7 +231,7 @@ COVERAGE_VIOLATIONS=0
 while IFS= read -r py; do
     [ -f "$py" ] || continue
     # Антипаттерн: Path с literal "DS-strategy" без чтения env
-    if grep -qE '"DS-strategy"|/DS-strategy[/"]' "$py" 2>/dev/null; then
+    if grep -qE "$DETECTOR_07B_REGEX" "$py" 2>/dev/null; then
         # Допустимо если читает GOVERNANCE_REPO из env (значит fallback default)
         if ! grep -qE 'IWE_GOVERNANCE_REPO|GOVERNANCE_REPO' "$py" 2>/dev/null; then
             log "  ⚠ $py: hardcoded DS-strategy без чтения GOVERNANCE_REPO env"
@@ -249,14 +249,14 @@ done < <(find roles -name '*.py' -type f 2>/dev/null)
 while IFS= read -r sh; do
     [ -f "$sh" ] || continue
     # Antipattern: `/DS-strategy/` или `"DS-strategy"` literal без use $GOVERNANCE_DIR
-    if grep -qE '"DS-strategy"|/DS-strategy[/"]' "$sh" 2>/dev/null; then
+    if grep -qE "$DETECTOR_07B_REGEX" "$sh" 2>/dev/null; then
         # Допустимо если читает GOVERNANCE_REPO из env (значит fallback default — паттерн Python detector выше)
         if grep -qE 'IWE_GOVERNANCE_REPO|GOVERNANCE_REPO' "$sh" 2>/dev/null; then
             continue
         fi
         # Фильтр fallback `${VAR:-...DS-strategy...}` (`:-` должен быть внутри parameter-expansion с DS-strategy)
         # и комментариев (строка вида `path:NN:   # ...`).
-        HITS=$(grep -nE '"DS-strategy"|/DS-strategy[/"]' "$sh" 2>/dev/null \
+        HITS=$(grep -nE "$DETECTOR_07B_REGEX" "$sh" 2>/dev/null \
             | grep -vE '\$\{[^}]*:-[^}]*DS-strategy|^[^:]+:[[:space:]]*#' || true)
         if [ -n "$HITS" ]; then
             log "  ⚠ $sh: hardcoded DS-strategy без \$GOVERNANCE_DIR / GOVERNANCE_REPO env:"
