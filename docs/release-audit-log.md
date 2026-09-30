@@ -5,11 +5,11 @@
 ## Назначение
 
 Adversarial audit — субагент или внешний пилот ищет регрессии вне покрытия:
-- 11 detectors (`integration-contract-validator.sh`)
-- smoke 49 (`smoke-test-fresh-install.sh`)
+- 8 detectors (`integration-detectors.sh`)
+- smoke 14 (`integration-smoke.sh`)
 - promote-checks (`validate-fmt-scripts.sh`)
 
-Любой найденный класс регрессий → новый detector в `integration-contract-validator.sh` (если воспроизводимо в CI) или smoke (если требует среды пилота).
+Любой найденный класс регрессий → новый detector в `integration-detectors.sh` (если воспроизводимо в CI) или smoke (если требует среды пилота).
 
 ## Process
 
@@ -30,7 +30,7 @@ release tag vX.Y.Z → auto-issue (legacy) | новая практика → з�
 
 | Version | Status | Date | Findings | Result | Notes |
 |---------|--------|------|----------|--------|-------|
-| v0.40.0 | **completed** | 2026-09-10 | 1 initial-misclassified blocker (false alarm, design intent already documented in code — see notes) + 4 confirmed important | GO (после фиксов) | issue #748 (sub-agent post-release verify), фиксы в PR #777 (issue-batch) + follow-up на ветке fix/wp570-audit-followup. Разбор: (1) «утечка» похожих на YooKassa-ключи в именах `scripts/tests/*.py` — false positive, `secret-bypass-lib.sh:70-84` уже документирует это намеренным fail-closed решением (WP-544) для длинных snake_case pytest-имён без source-context; не секрет, не инцидент; (2) `memory/MEMORY.md` (seed) — 2 мёртвые ссылки на файлы, удалённые в v0.27 → убраны; (3) `setup/detector-regex.sh` DETECTOR_07 не ловил quoted bare-литерал → регекс расширен + fixture; (4) `setup/smoke-test-fresh-install.sh` — 4 fail на NixOS (не regression шаблона — hardcoded `PATH=/usr/bin:/bin` не включал Nix-профиль + e2e-тесты наследовали PATH с посторонним git-wrapper дев-машины) → `SMOKE_CLEAN_PATH`, 49/0 после фикса; (5) `.claude/skills/lesson-close/` без парного `/lesson` → issue #778, оставлен пилоту (продуктовое решение, не техническая правка).  Дополнительно (fork allexxus, red-team Kai9000, 2026-09-10): независимая проверка того же релиза дала 0 blocker / 0 important, 5 nice-to-have; щель детектора DS-strategy закрыта там DRY-фиксом — общий `DETECTOR_07B_REGEX` для трёх call-site в `integration-contract-validator.sh` (коммит `88619f5`), тот же класс, что правка (3); мёртвые ссылки в `memory/MEMORY.md` совпадают с правкой (2). |
+| v0.40.0 | **completed** | 2026-09-10 | 1 initial-misclassified blocker (false alarm, design intent already documented in code — see notes) + 4 confirmed important | GO (после фиксов) | issue #748 (sub-agent post-release verify), фиксы в PR #777 (issue-batch) + follow-up на ветке fix/wp570-audit-followup. Разбор: (1) «утечка» похожих на YooKassa-ключи в именах `scripts/tests/*.py` — false positive, `secret-bypass-lib.sh:70-84` уже документирует это намеренным fail-closed решением (WP-544) для длинных snake_case pytest-имён без source-context; не секрет, не инцидент; (2) `memory/MEMORY.md` (seed) — 2 мёртвые ссылки на файлы, удалённые в v0.27 → убраны; (3) `setup/detector-regex.sh` DETECTOR_07 не ловил quoted bare-литерал → регекс расширен + fixture; (4) `setup/smoke-test-fresh-install.sh` — 4 fail на NixOS (не regression шаблона — hardcoded `PATH=/usr/bin:/bin` не включал Nix-профиль + e2e-тесты наследовали PATH с посторонним git-wrapper дев-машины) → `SMOKE_CLEAN_PATH`, 49/0 после фикса; (5) `.claude/skills/lesson-close/` без парного `/lesson` → issue #778, оставлен пилоту (продуктовое решение, не техническая правка). |
 | v0.39.1 | **completed** | 2026-08-30 | 0 P0/P1, 3 low-severity (pre-existing, not caused by this delta) | GO | issue #576 (self-run by implementing agent, pilot-waived); independent context-isolated re-audit of the delta (PR #585 f896701 + PR #586 10c9732, personal-guide rename) — separate GO, findings: stale `docs/skills-catalog.md` (pre-existing), `org-dev/SKILL.md` references unrelated `PACK-personal/personal-guide/` path (needs owner confirmation it's intentionally distinct), `seed/strategy/scripts/day-open-scaffold.sh` not covered by manifest B2 (pre-existing gap) |
 | v0.34.1 | skipped-unverified | — | — | — | migrated from #133 |
 | v0.34.0 | skipped-unverified | — | — | — | migrated from #130 |
@@ -55,6 +55,6 @@ release tag vX.Y.Z → auto-issue (legacy) | новая практика → з�
 ## Связанные
 
 - `verify-before-promote.sh` — gate для record-keeping
-- `integration-contract-validator.sh` — куда возвращаются находки audit'а
+- `integration-detectors.sh` — куда возвращаются находки audit'а
 - `TESTING.md` — общая стратегия
 - Peer-session 2026-06-01-18 (авторский governance-репо) — миграция из 22 open issues
