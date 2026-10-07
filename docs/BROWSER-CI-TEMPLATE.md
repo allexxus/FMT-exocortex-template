@@ -4,10 +4,6 @@
 > **Setup:** Copy this entire block into Project → Custom Instructions. One-time setup.
 > **Update:** Re-run `generate_fault_remind` monthly or when a critical fault occurs.
 
-> **Различие поверхностей (обновлено):** этот шаблон — для **чата claude.ai** (без кода/FS).
-> Отдельный продукт **claude.ai/code** — Claude Code в облаке: у него есть shell и git (в одноразовой
-> облачной VM), он клонирует репозитории и правит код. См. [QUICK-START.md §5](QUICK-START.md).
-
 ---
 
 ## Role & Identity
