@@ -198,7 +198,6 @@ sync_owned_memory_files() {
 
   "$STDLIB_PYTHON3" - "$@" <<'PYEOF'
 import hashlib
-import fcntl
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -208,6 +207,15 @@ import sys
 import time
 import unicodedata
 import uuid
+
+# issue #933/#1099: fcntl does not exist on Windows. The POSIX transaction
+# journal below (fcntl.flock at the lock acquisition near the bottom of this
+# script) never runs on Windows -- dispatch exits through main_windows()
+# first -- but the unconditional import used to crash before that dispatch
+# was even reached, which took out the already-reviewed Windows branch along
+# with it (WP-7 F171, #911).
+if os.name != "nt":
+    import fcntl
 
 
 source_root = Path(sys.argv[1])
@@ -591,7 +599,11 @@ def open_destination_parent(relative, create_parents):
                     return None
                 os.mkdir(component, mode=0o700, dir_fd=descriptor)
                 os.fsync(descriptor)
-                entry_stat = exact_entry_stat(descriptor, component)
+                # direct stat avoids os.listdir fd-position issue on btrfs (issue #1181)
+                try:
+                    entry_stat = os.stat(component, dir_fd=descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    entry_stat = None
             if entry_stat is None or not stat.S_ISDIR(entry_stat.st_mode):
                 raise PreflightError(
                     f"destination intermediate component is not a directory: {component}"

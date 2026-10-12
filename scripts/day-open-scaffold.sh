@@ -44,6 +44,42 @@ IWE_ROOT="$IWE"
 export IWE_ROOT IWE
 DATE="${1:-$(date +%Y-%m-%d)}"
 CONFIG="$IWE/memory/day-rhythm-config.yaml"
+# issue #1149: the path is pasted into Python source text, and Git Bash converts
+# `/c/Users/...` only in command-line ARGUMENTS, not inside `-c "..."` code. Windows
+# Python then cannot open it and every config-driven section falls back to defaults.
+CONFIG_PY="$CONFIG"
+if command -v cygpath >/dev/null 2>&1; then
+  CONFIG_PY=$(cygpath -m "$CONFIG" 2>/dev/null || printf '%s' "$CONFIG")
+fi
+
+# issue #924: day_boundary ("HH:MM", default none = no shift) lets the pilot say
+# that work done after midnight but before this hour still belongs to the day
+# that's ending, not a new one. Only the auto "today" default is a candidate —
+# an explicit date argument is the caller's exact choice and is never
+# second-guessed (mirrors the same check in day-open-pipeline.sh, issue #924).
+if [ -z "${1:-}" ]; then
+  # Scoped to the day_open: block (same precaution as STRATEGY_DAY_NAME in
+  # day-open-pipeline.sh — a same-named key elsewhere can't hijack this lookup;
+  # resets on the next top-level key so a later block's own day_boundary can't
+  # be picked up either) and skips commented-out lines: a bare top-level grep
+  # would also match the shipped default's commented-out example line,
+  # silently turning the shift on.
+  DAY_BOUNDARY=$(awk '
+    /^[^[:space:]]/ && !/^day_open:/ { f=0 }
+    /^day_open:/ { f=1 }
+    f && /day_boundary:/ && !/^[[:space:]]*#/ { print; exit }
+  ' "$CONFIG" 2>/dev/null \
+    | sed -E 's/.*day_boundary:[[:space:]]*"?([0-9]{1,2}:[0-9]{2})"?.*/\1/')
+  if [[ "$DAY_BOUNDARY" =~ ^([0-9]{1,2}):([0-9]{2})$ ]]; then
+    boundary_min=$(( 10#${BASH_REMATCH[1]} * 60 + 10#${BASH_REMATCH[2]} ))
+    now_min=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))
+    if [ "$now_min" -lt "$boundary_min" ]; then
+      DATE=$(date -j -v-1d -f "%Y-%m-%d" "$DATE" "+%Y-%m-%d" 2>/dev/null \
+        || date -d "$DATE - 1 day" "+%Y-%m-%d" 2>/dev/null)
+    fi
+  fi
+fi
+
 PARAMS_FILE="$IWE/params.yaml"
 MULTIPLIER_ENABLED="true"
 if [ -f "$PARAMS_FILE" ] && grep -qE '^multiplier_enabled:[[:space:]]*false([[:space:]]*(#.*)?)?$' "$PARAMS_FILE"; then
@@ -152,7 +188,7 @@ def flatten(d, prefix=''):
 # indistinguishable. Emit an explicit ok/error sentinel instead (bug-2026-06-05,
 # bug-2026-06-09, bug-2026-07-04).
 try:
-    with open('$CONFIG') as f:
+    with open('$CONFIG_PY') as f:
         d = yaml.safe_load(f) or {}
     for k, v in flatten(d):
         print(k + '\x1f' + v)
@@ -312,7 +348,7 @@ extract_mandatory_daily_wps() {
   "$_RESOLVED_PYTHON3" -c "
 import yaml, sys
 try:
-    with open('$CONFIG') as f:
+    with open('$CONFIG_PY') as f:
         d = yaml.safe_load(f) or {}
     items = d.get('mandatory_daily_wps') or []
     for item in items:
@@ -671,11 +707,26 @@ render_repo_activity() {
   since=$(date -v-2d +%Y-%m-%d 2>/dev/null || date -d "2 days ago" +%Y-%m-%d 2>/dev/null)
   [ -z "$since" ] && { echo "_не удалось вычислить дату фильтра — пропуск._"; return; }
   out="| Репозиторий | Коммитов (2д) | Последний |\n|---|---|---|\n"
+  # issue #1131: `cut -c1-50` counts bytes under the C/POSIX locale (launchd's
+  # EnvironmentVariables carry no LANG/LC_*) and can split a multibyte UTF-8
+  # character mid-sequence, corrupting the whole scaffold file for every
+  # downstream reader. Resolved once here, not inside the loop (same
+  # rationale as the find-python3.sh resolution elsewhere in this file).
+  local _resolved_python3
+  _resolved_python3=$("$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/find-python3.sh" --stdlib-only 2>/dev/null) || _resolved_python3=""
   while IFS= read -r repo; do
     slug=$(basename "$repo")
     n=$(git -C "$repo" log --since="$since 00:00:00" --oneline 2>/dev/null | wc -l | tr -d ' ')
     [ "${n:-0}" -eq 0 ] && continue
-    last=$(git -C "$repo" log -1 --format='%s' 2>/dev/null | cut -c1-50)
+    if [ -n "$_resolved_python3" ]; then
+      last=$(git -C "$repo" log -1 --format='%s' 2>/dev/null | "$_resolved_python3" -c "
+import sys
+line = sys.stdin.buffer.readline().decode('utf-8', errors='replace').rstrip('\n')
+print(line if len(line) <= 50 else line[:50] + '…')
+")
+    else
+      last=$(git -C "$repo" log -1 --format='%s' 2>/dev/null | cut -c1-50)
+    fi
     out="${out}| ${slug} | ${n} | ${last} |\n"
     any=1
   done < <(iwe_repo_dirs "$IWE"/*/)
@@ -1620,7 +1671,11 @@ IWE_STATUS_TABLE=$(render_iwe_status)
 WORLD_SECTION=$(render_world)
 
 # --- Output ---
-cat <<EOF
+# issue #496: heading style (details vs markdown) is a per-installation choice,
+# not a format migration — the validator already accepts both, so this only
+# changes what the generator prints, read from params.yaml.
+HEADING_STYLE=$(iwe_heading_style "$PARAMS_FILE")
+cat <<EOF | iwe_render_heading_style "$HEADING_STYLE"
 ---
 type: daily-plan
 date: $DATE

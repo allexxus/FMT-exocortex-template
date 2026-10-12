@@ -44,6 +44,11 @@ while [[ $# -gt 0 ]]; do
     *)               DATE="$1"; shift ;;
   esac
 done
+# issue #924: an explicit --date/-d or positional date is the caller's exact choice
+# and is never second-guessed below; only the auto "today" default is a candidate
+# for the day_boundary shift (applied once $CONFIG is known, further down).
+DATE_WAS_AUTO=false
+[ -z "$DATE" ] && DATE_WAS_AUTO=true
 DATE="${DATE:-$(date +%Y-%m-%d)}"
 PROBE_START_S=$SECONDS
 
@@ -95,11 +100,28 @@ tg_notify() {
     echo "  [strategist: intermediate TG notice deferred to owner]"
     return 0
   fi
+  # A scheduler retry after a deferral whose notice was DELIVERED earlier today (strategist.sh sets
+  # DAY_OPEN_QUIET_RETRY=1 from the "[tg delivered]" line below): the "started" and "deferred" notices went out with
+  # the first run, and the scheduler comes back up to seven times a day, so repeating them sent up to fourteen
+  # messages a day. The digest and every alarm still go out: the patterns match the START of the message (its emoji
+  # and fixed words), not a phrase somewhere inside a digest or an alarm reason (red team, round 37).
+  if [ "${DAY_OPEN_QUIET_RETRY:-}" = "1" ]; then
+    case "$msg" in
+      "🌅 Day Open pipeline started for "*|"⏸ Day Open "*" отложен: "*)
+        echo "  [retry after a deferral: TG suppressed] $msg" | head -1
+        return 0
+        ;;
+    esac
+  fi
   if [ -z "${TG_TOKEN:-}" ] || [ -z "${TG_CHAT:-}" ]; then
     echo "  [no tg credentials] $msg" | head -1
     return 1
   fi
   telegram_send "$msg" || { echo "  [tg delivery FAILED] $msg" | head -2; return 1; }
+  # What strategist.sh reads: only a delivered deferral notice lets the day's retries keep quiet (red team, round 38:
+  # after a failed first send the retries must try again, not stay silent all day).
+  echo "  [tg delivered] $msg" | head -1
+  return 0
 }
 
 # A refusal while the workspace is being resolved (below) happens before the normal path
@@ -174,6 +196,41 @@ export IWE_SCRIPTS
 # the first child process starts.
 export IWE_GOVERNANCE_REPO="$GOV_REPO"
 CONFIG="$DS_STRATEGY/exocortex/day-rhythm-config.yaml"
+
+# issue #924: day_boundary ("HH:MM", default none = no shift) lets the pilot say
+# that work done after midnight but before this hour still belongs to the day
+# that's ending, not a new one. Only the auto "today" default is a candidate —
+# an explicit --date/-d is the caller's exact choice and is never second-guessed.
+if [ "$DATE_WAS_AUTO" = true ]; then
+  # Reads $IWE/memory/day-rhythm-config.yaml (the pilot's live config), not
+  # $CONFIG ($DS_STRATEGY/exocortex/..., a snapshot day-close.sh only refreshes
+  # once at Day Close) -- a same-day edit to day_boundary must take effect on
+  # this same night's run, not wait for the next Day Close to refresh the
+  # snapshot. day-open-scaffold.sh (step 3 below) already treats the live copy
+  # as authoritative for the same reason (it passes it explicitly to
+  # day-open-preflight.sh), this is the same source for the same key.
+  # Scoped to the day_open: block (same precaution as STRATEGY_DAY_NAME below —
+  # a same-named key elsewhere can't hijack this lookup; resets on the next
+  # top-level key so a later block's own day_boundary can't be picked up
+  # either) and skips commented-out lines: a bare top-level grep would also
+  # match the shipped default's commented-out example line, silently turning
+  # the shift on.
+  DAY_BOUNDARY=$(awk '
+    /^[^[:space:]]/ && !/^day_open:/ { f=0 }
+    /^day_open:/ { f=1 }
+    f && /day_boundary:/ && !/^[[:space:]]*#/ { print; exit }
+  ' "$IWE/memory/day-rhythm-config.yaml" 2>/dev/null \
+    | sed -E 's/.*day_boundary:[[:space:]]*"?([0-9]{1,2}:[0-9]{2})"?.*/\1/')
+  if [[ "$DAY_BOUNDARY" =~ ^([0-9]{1,2}):([0-9]{2})$ ]]; then
+    boundary_min=$(( 10#${BASH_REMATCH[1]} * 60 + 10#${BASH_REMATCH[2]} ))
+    now_min=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))
+    if [ "$now_min" -lt "$boundary_min" ]; then
+      DATE=$(date -j -v-1d -f "%Y-%m-%d" "$DATE" "+%Y-%m-%d" 2>/dev/null \
+        || date -d "$DATE - 1 day" "+%Y-%m-%d" 2>/dev/null)
+    fi
+  fi
+fi
+
 # shellcheck source=lib/ledger-path.sh
 . "$SCRIPT_HOME/lib/ledger-path.sh"
 
@@ -356,7 +413,9 @@ WEEKPLAN_PATH=$(ls -t "$CURRENT_DIR"/WeekPlan\ *.md 2>/dev/null | grep -v '(prob
 WP_REGISTRY="$DS_STRATEGY/docs/WP-REGISTRY.md"
 # WP-7 Ф-DRIFT-DATA-PIPELINES D1 (13.07): было memory/cp-profile.json, который не
 # писал ни один механизм. update-derived-snapshot.py (шаг 1.5 выше) уже пишет сюда.
-CP_PROFILE="$DS_STRATEGY/inbox/WP-425/cache/derived_snapshot.json"
+# issue #1132: inbox/WP-425/ — платформенный номер РП автора, не имеющий смысла
+# для чужого governance-репо; путь должен совпадать с _resolve_snapshot_path().
+CP_PROFILE="$DS_STRATEGY/.cache/derived_snapshot.json"
 CALENDAR_OUT="$IWE/.tmp/calendar-$DATE.txt"
 # issue #877: the shipped script carries NO built-in gateway address. The old
 # default was the maintainer's private Railway gateway, which a user install can
